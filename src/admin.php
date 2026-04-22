@@ -141,7 +141,7 @@ function wicw_render_dashboard_page()
                     <div class="wicw-dashboard__info-row">
                         <dt class="wicw-dashboard__info-label"><?php echo esc_html($row['label']); ?></dt>
                         <dd class="wicw-dashboard__info-value">
-                            <?php if ($row['status'] !== '') : ?>
+                            <?php if (in_array($row['status'], array('ok', 'warn'), true)) : ?>
                                 <span class="wicw-dashboard__info-status wicw-dashboard__info-status--<?php echo esc_attr($row['status']); ?>"></span>
                             <?php endif; ?>
                             <?php echo esc_html($row['value']); ?>
