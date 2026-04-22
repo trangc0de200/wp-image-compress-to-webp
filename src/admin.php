@@ -274,9 +274,16 @@ function wicw_handle_regeneration_start_submission()
 
     check_admin_referer('wicw_start_regeneration', 'wicw_start_regeneration_nonce');
 
-    $attachment_ids = wicw_get_regenerable_attachment_ids();
-    $session_id     = wp_generate_uuid4();
-    set_transient('wicw_regeneration_queue_' . $session_id, $attachment_ids, HOUR_IN_SECONDS);
+    $session_id = wp_generate_uuid4();
+    $total      = wicw_count_regenerable_attachments();
+    set_transient(
+        'wicw_regeneration_session_' . $session_id,
+        array(
+            'total_count' => $total,
+            'started_at'  => time(),
+        ),
+        HOUR_IN_SECONDS
+    );
 
     $redirect_url = add_query_arg(
         array(
@@ -284,7 +291,7 @@ function wicw_handle_regeneration_start_submission()
             'wicw_regenerate'    => '1',
             'wicw_session'       => $session_id,
             'wicw_offset'        => 0,
-            'wicw_total'         => count($attachment_ids),
+            'wicw_total'         => $total,
             'wicw_regenerated'   => 0,
             'wicw_failed'        => 0,
             'wicw_nonce'         => wp_create_nonce('wicw_bulk_regenerate'),
@@ -330,8 +337,8 @@ function wicw_get_regeneration_progress_state()
         );
     }
 
-    $queue = get_transient('wicw_regeneration_queue_' . $session_id);
-    if (! is_array($queue)) {
+    $session_data = get_transient('wicw_regeneration_session_' . $session_id);
+    if (! is_array($session_data)) {
         return array(
             'is_error' => true,
             'message'  => __('Regeneration session expired. Please start again.', 'wp-image-compress-to-webp'),
@@ -343,12 +350,13 @@ function wicw_get_regeneration_progress_state()
     $regenerated_raw = filter_input(INPUT_GET, 'wicw_regenerated', FILTER_VALIDATE_INT);
     $failed_raw      = filter_input(INPUT_GET, 'wicw_failed', FILTER_VALIDATE_INT);
     $offset          = max(0, (int) $offset_raw);
-    $total           = ($total_raw !== null && $total_raw !== false) ? max(0, (int) $total_raw) : count($queue);
+    $total_from_session = isset($session_data['total_count']) ? (int) $session_data['total_count'] : 0;
+    $total           = ($total_raw !== null && $total_raw !== false) ? max(0, (int) $total_raw) : max(0, $total_from_session);
     $regenerated     = max(0, (int) $regenerated_raw);
     $failed          = max(0, (int) $failed_raw);
     $batch_size = wicw_conversion_batch_size();
 
-    $batch_ids = array_slice($queue, $offset, $batch_size);
+    $batch_ids = wicw_get_regenerable_attachment_ids($offset, $batch_size);
     foreach ($batch_ids as $attachment_id) {
         $result = wicw_regenerate_attachment_thumbnails((int) $attachment_id);
         if (! empty($result['regenerated'])) {
@@ -377,7 +385,7 @@ function wicw_get_regeneration_progress_state()
             'wicw_nonce'       => $nonce,
         );
     } else {
-        delete_transient('wicw_regeneration_queue_' . $session_id);
+        delete_transient('wicw_regeneration_session_' . $session_id);
     }
 
     return array(

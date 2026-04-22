@@ -21,6 +21,7 @@ It also includes a lightweight admin dashboard for local license key management.
 - Uses `Imagick` when available, with fallback to `GD` (`imagewebp`)
 - Admin page under **WebP Compress** for license activation/deactivation
 - Dashboard button to convert existing JPEG/PNG media to WebP with progress
+- Dashboard button to regenerate thumbnails for all image attachments with progress
 - Nonce-protected license form handling and capability checks (`manage_options`)
 
 ## Requirements
@@ -65,6 +66,13 @@ Go to **WebP Compress** in WP Admin and click **Convert Old Images to WebP**.
 
 - The dashboard shows conversion progress for old JPEG/PNG attachments.
 - Existing items are processed in batches to avoid request timeouts.
+
+### Regenerate all thumbnails
+
+Go to **WebP Compress** in WP Admin and click **Regenerate All Thumbnails**.
+
+- The dashboard shows regeneration progress for image attachments.
+- Items are processed in batches to avoid request timeouts.
 
 ## Current behavior and limitations
 
