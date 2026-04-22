@@ -1,0 +1,71 @@
+.wicw-dashboard {
+    max-width: 860px;
+    margin-top: 20px;
+}
+
+.wicw-dashboard__title {
+    margin-bottom: 8px;
+    color: #1d2327;
+}
+
+.wicw-dashboard__subtitle,
+.wicw-dashboard__meta {
+    margin-top: 0;
+    color: #50575e;
+}
+
+.wicw-dashboard__card {
+    margin-top: 20px;
+    background: #fff;
+    border: 1px solid #dcdcde;
+    border-radius: 12px;
+    padding: 22px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.wicw-dashboard__section-title {
+    margin-top: 0;
+    margin-bottom: 16px;
+}
+
+.wicw-dashboard__status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 16px;
+}
+
+.wicw-dashboard__badge {
+    display: inline-block;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    text-transform: uppercase;
+}
+
+.wicw-dashboard__badge.is-active {
+    background: #d1f4df;
+    color: #0a5f28;
+}
+
+.wicw-dashboard__badge.is-inactive {
+    background: #f0f0f1;
+    color: #50575e;
+}
+
+.wicw-dashboard__input {
+    min-width: min(100%, 420px);
+}
+
+.wicw-dashboard__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 18px;
+}
+
+.wicw-dashboard__notice {
+    margin-top: 16px;
+}
