@@ -95,6 +95,26 @@ function wicw_enqueue_admin_assets($hook_suffix)
 add_action('admin_enqueue_scripts', 'wicw_enqueue_admin_assets');
 
 /**
+ * Get batch size for dashboard conversion processing.
+ *
+ * @return int
+ */
+function wicw_conversion_batch_size()
+{
+    return max(1, (int) apply_filters('wicw_conversion_batch_size', 20));
+}
+
+/**
+ * Get auto-continue delay in milliseconds for conversion progress.
+ *
+ * @return int
+ */
+function wicw_conversion_redirect_delay_ms()
+{
+    return max(0, (int) apply_filters('wicw_conversion_redirect_delay_ms', 700));
+}
+
+/**
  * Start a bulk conversion session for existing attachments.
  *
  * @return void
@@ -152,7 +172,7 @@ function wicw_get_conversion_progress_state()
         return null;
     }
 
-    $nonce = isset($_GET['wicw_nonce']) ? sanitize_text_field(wp_unslash($_GET['wicw_nonce'])) : '';
+    $nonce = isset($_GET['wicw_nonce']) ? (string) wp_unslash($_GET['wicw_nonce']) : '';
     if (! wp_verify_nonce($nonce, 'wicw_bulk_convert')) {
         return array(
             'is_error' => true,
@@ -180,7 +200,7 @@ function wicw_get_conversion_progress_state()
     $total     = isset($_GET['wicw_total']) ? max(0, absint($_GET['wicw_total'])) : count($queue);
     $converted = isset($_GET['wicw_converted']) ? max(0, absint($_GET['wicw_converted'])) : 0;
     $failed    = isset($_GET['wicw_failed']) ? max(0, absint($_GET['wicw_failed'])) : 0;
-    $batch_size = 20;
+    $batch_size = wicw_conversion_batch_size();
 
     $batch_ids = array_slice($queue, $offset, $batch_size);
     foreach ($batch_ids as $attachment_id) {
@@ -198,20 +218,17 @@ function wicw_get_conversion_progress_state()
     $percent   = ($total > 0) ? (int) floor(($processed / $total) * 100) : 100;
     $percent   = max(0, min(100, $percent));
 
-    $next_url = '';
+    $next_args = array();
     if ($running) {
-        $next_url = add_query_arg(
-            array(
-                'page'           => 'wicw-dashboard',
-                'wicw_convert'   => '1',
-                'wicw_session'   => $session_id,
-                'wicw_offset'    => $processed,
-                'wicw_total'     => $total,
-                'wicw_converted' => $converted,
-                'wicw_failed'    => $failed,
-                'wicw_nonce'     => $nonce,
-            ),
-            admin_url('admin.php')
+        $next_args = array(
+            'page'           => 'wicw-dashboard',
+            'wicw_convert'   => '1',
+            'wicw_session'   => $session_id,
+            'wicw_offset'    => $processed,
+            'wicw_total'     => $total,
+            'wicw_converted' => $converted,
+            'wicw_failed'    => $failed,
+            'wicw_nonce'     => $nonce,
         );
     } else {
         delete_transient('wicw_conversion_queue_' . $session_id);
@@ -225,7 +242,7 @@ function wicw_get_conversion_progress_state()
         'converted'  => $converted,
         'failed'     => $failed,
         'percent'    => $percent,
-        'next_url'   => $next_url,
+        'next_args'  => $next_args,
     );
 }
 
@@ -380,13 +397,10 @@ function wicw_render_dashboard_page()
                             ?>
                         </p>
 
-                        <?php if (! empty($conversion_state['running']) && ! empty($conversion_state['next_url'])) : ?>
+                        <?php if (! empty($conversion_state['running']) && ! empty($conversion_state['next_args']) && is_array($conversion_state['next_args'])) : ?>
+                            <?php $next_url = add_query_arg($conversion_state['next_args'], admin_url('admin.php')); ?>
                             <p class="wicw-dashboard__meta"><?php echo esc_html__('Continuing conversion...', 'wp-image-compress-to-webp'); ?></p>
-                            <script>
-                                window.setTimeout(function () {
-                                    window.location.href = <?php echo wp_json_encode((string) $conversion_state['next_url']); ?>;
-                                }, 700);
-                            </script>
+                            <meta http-equiv="refresh" content="<?php echo esc_attr((string) max(1, (int) ceil(wicw_conversion_redirect_delay_ms() / 1000))); ?>;url=<?php echo esc_url($next_url); ?>">
                         <?php else : ?>
                             <p class="wicw-dashboard__meta"><?php echo esc_html__('Conversion finished.', 'wp-image-compress-to-webp'); ?></p>
                         <?php endif; ?>

@@ -70,7 +70,7 @@ Go to **WebP Compress** in WP Admin and click **Convert Old Images to WebP**.
 
 - New uploads are converted automatically; existing media can be converted manually from the dashboard.
 - Only `jpg`, `jpeg`, and `png` are handled.
-- Conversion quality is fixed to 80 in code.
+- Conversion quality defaults to 80 and can be adjusted via the `wicw_webp_quality` filter.
 - No remote license server check is implemented yet.
 
 ## Project structure
