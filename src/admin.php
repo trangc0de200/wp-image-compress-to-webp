@@ -168,11 +168,13 @@ function wicw_get_conversion_progress_state()
         return null;
     }
 
-    if (! isset($_GET['wicw_convert']) || (string) $_GET['wicw_convert'] !== '1') {
+    $convert_flag = filter_input(INPUT_GET, 'wicw_convert', FILTER_UNSAFE_RAW);
+    if ((string) $convert_flag !== '1') {
         return null;
     }
 
-    $nonce = isset($_GET['wicw_nonce']) ? (string) wp_unslash($_GET['wicw_nonce']) : '';
+    $nonce = filter_input(INPUT_GET, 'wicw_nonce', FILTER_UNSAFE_RAW);
+    $nonce = is_string($nonce) ? sanitize_text_field($nonce) : '';
     if (! wp_verify_nonce($nonce, 'wicw_bulk_convert')) {
         return array(
             'is_error' => true,
@@ -180,7 +182,8 @@ function wicw_get_conversion_progress_state()
         );
     }
 
-    $session_id = isset($_GET['wicw_session']) ? sanitize_key(wp_unslash($_GET['wicw_session'])) : '';
+    $session_id = filter_input(INPUT_GET, 'wicw_session', FILTER_UNSAFE_RAW);
+    $session_id = is_string($session_id) ? sanitize_key($session_id) : '';
     if ($session_id === '') {
         return array(
             'is_error' => true,
@@ -196,10 +199,14 @@ function wicw_get_conversion_progress_state()
         );
     }
 
-    $offset    = isset($_GET['wicw_offset']) ? max(0, absint($_GET['wicw_offset'])) : 0;
-    $total     = isset($_GET['wicw_total']) ? max(0, absint($_GET['wicw_total'])) : count($queue);
-    $converted = isset($_GET['wicw_converted']) ? max(0, absint($_GET['wicw_converted'])) : 0;
-    $failed    = isset($_GET['wicw_failed']) ? max(0, absint($_GET['wicw_failed'])) : 0;
+    $offset_raw    = filter_input(INPUT_GET, 'wicw_offset', FILTER_VALIDATE_INT);
+    $total_raw     = filter_input(INPUT_GET, 'wicw_total', FILTER_VALIDATE_INT);
+    $converted_raw = filter_input(INPUT_GET, 'wicw_converted', FILTER_VALIDATE_INT);
+    $failed_raw    = filter_input(INPUT_GET, 'wicw_failed', FILTER_VALIDATE_INT);
+    $offset        = max(0, (int) $offset_raw);
+    $total         = ($total_raw !== null && $total_raw !== false) ? max(0, (int) $total_raw) : count($queue);
+    $converted     = max(0, (int) $converted_raw);
+    $failed        = max(0, (int) $failed_raw);
     $batch_size = wicw_conversion_batch_size();
 
     $batch_ids = array_slice($queue, $offset, $batch_size);
@@ -300,11 +307,13 @@ function wicw_get_regeneration_progress_state()
         return null;
     }
 
-    if (! isset($_GET['wicw_regenerate']) || (string) $_GET['wicw_regenerate'] !== '1') {
+    $regenerate_flag = filter_input(INPUT_GET, 'wicw_regenerate', FILTER_UNSAFE_RAW);
+    if ((string) $regenerate_flag !== '1') {
         return null;
     }
 
-    $nonce = isset($_GET['wicw_nonce']) ? (string) wp_unslash($_GET['wicw_nonce']) : '';
+    $nonce = filter_input(INPUT_GET, 'wicw_nonce', FILTER_UNSAFE_RAW);
+    $nonce = is_string($nonce) ? sanitize_text_field($nonce) : '';
     if (! wp_verify_nonce($nonce, 'wicw_bulk_regenerate')) {
         return array(
             'is_error' => true,
@@ -312,7 +321,8 @@ function wicw_get_regeneration_progress_state()
         );
     }
 
-    $session_id = isset($_GET['wicw_session']) ? sanitize_key(wp_unslash($_GET['wicw_session'])) : '';
+    $session_id = filter_input(INPUT_GET, 'wicw_session', FILTER_UNSAFE_RAW);
+    $session_id = is_string($session_id) ? sanitize_key($session_id) : '';
     if ($session_id === '') {
         return array(
             'is_error' => true,
@@ -328,11 +338,15 @@ function wicw_get_regeneration_progress_state()
         );
     }
 
-    $offset      = isset($_GET['wicw_offset']) ? max(0, absint($_GET['wicw_offset'])) : 0;
-    $total       = isset($_GET['wicw_total']) ? max(0, absint($_GET['wicw_total'])) : count($queue);
-    $regenerated = isset($_GET['wicw_regenerated']) ? max(0, absint($_GET['wicw_regenerated'])) : 0;
-    $failed      = isset($_GET['wicw_failed']) ? max(0, absint($_GET['wicw_failed'])) : 0;
-    $batch_size  = wicw_conversion_batch_size();
+    $offset_raw      = filter_input(INPUT_GET, 'wicw_offset', FILTER_VALIDATE_INT);
+    $total_raw       = filter_input(INPUT_GET, 'wicw_total', FILTER_VALIDATE_INT);
+    $regenerated_raw = filter_input(INPUT_GET, 'wicw_regenerated', FILTER_VALIDATE_INT);
+    $failed_raw      = filter_input(INPUT_GET, 'wicw_failed', FILTER_VALIDATE_INT);
+    $offset          = max(0, (int) $offset_raw);
+    $total           = ($total_raw !== null && $total_raw !== false) ? max(0, (int) $total_raw) : count($queue);
+    $regenerated     = max(0, (int) $regenerated_raw);
+    $failed          = max(0, (int) $failed_raw);
+    $batch_size = wicw_conversion_batch_size();
 
     $batch_ids = array_slice($queue, $offset, $batch_size);
     foreach ($batch_ids as $attachment_id) {

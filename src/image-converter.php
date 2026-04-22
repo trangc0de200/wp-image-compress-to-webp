@@ -345,7 +345,7 @@ function wicw_regenerate_attachment_thumbnails($attachment_id)
     }
 
     $metadata = wp_generate_attachment_metadata($attachment_id, $attached_file);
-    if (! is_array($metadata)) {
+    if ($metadata === false || is_wp_error($metadata) || ! is_array($metadata)) {
         return array('regenerated' => false, 'failed' => true);
     }
 
