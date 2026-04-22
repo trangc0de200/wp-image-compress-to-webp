@@ -70,6 +70,27 @@
     margin-top: 16px;
 }
 
+.wicw-dashboard__progress {
+    margin: 12px 0 16px;
+}
+
+.wicw-dashboard__progress-bar {
+    width: 100%;
+    max-width: 480px;
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: #f0f0f1;
+    border: 1px solid #dcdcde;
+}
+
+.wicw-dashboard__progress-value {
+    display: block;
+    height: 100%;
+    background: #2271b1;
+    transition: width 0.2s ease;
+}
+
 /* Server configuration info table */
 .wicw-dashboard__info-table {
     margin: 0;

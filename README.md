@@ -20,6 +20,7 @@ It also includes a lightweight admin dashboard for local license key management.
 - Original and intermediate files are removed only after successful WebP generation
 - Uses `Imagick` when available, with fallback to `GD` (`imagewebp`)
 - Admin page under **WebP Compress** for license activation/deactivation
+- Dashboard button to convert existing JPEG/PNG media to WebP with progress
 - Nonce-protected license form handling and capability checks (`manage_options`)
 
 ## Requirements
@@ -58,11 +59,18 @@ Go to **WebP Compress** in WP Admin:
 
 > Note: Current license activation is **local format validation only** (no external API validation).
 
+### Convert existing media
+
+Go to **WebP Compress** in WP Admin and click **Convert Old Images to WebP**.
+
+- The dashboard shows conversion progress for old JPEG/PNG attachments.
+- Existing items are processed in batches to avoid request timeouts.
+
 ## Current behavior and limitations
 
-- Only affects **new uploads**; existing media is not bulk-converted.
+- New uploads are converted automatically; existing media can be converted manually from the dashboard.
 - Only `jpg`, `jpeg`, and `png` are handled.
-- Conversion quality is fixed to 80 in code.
+- Conversion quality defaults to 80 and can be adjusted via the `wicw_webp_quality` filter.
 - No remote license server check is implemented yet.
 
 ## Project structure
