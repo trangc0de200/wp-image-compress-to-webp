@@ -5,6 +5,56 @@ if (! defined('ABSPATH')) {
 }
 
 /**
+ * Collect server configuration data relevant to this plugin.
+ *
+ * @return array<int, array{label: string, value: string, status: string}> Rows with label, value, and status ('ok'|'warn'|'').
+ */
+function wicw_get_server_info()
+{
+    $imagick_available = class_exists('Imagick');
+    $gd_webp_available = function_exists('imagewebp');
+
+    if ($imagick_available) {
+        $conversion_value  = __('Imagick (preferred)', 'wp-image-compress-to-webp');
+        $conversion_status = 'ok';
+    } elseif ($gd_webp_available) {
+        $conversion_value  = __('GD (fallback)', 'wp-image-compress-to-webp');
+        $conversion_status = 'ok';
+    } else {
+        $conversion_value  = __('Not available — conversion will fail', 'wp-image-compress-to-webp');
+        $conversion_status = 'warn';
+    }
+
+    return array(
+        array(
+            'label'  => __('PHP Version', 'wp-image-compress-to-webp'),
+            'value'  => phpversion(),
+            'status' => '',
+        ),
+        array(
+            'label'  => __('WordPress Version', 'wp-image-compress-to-webp'),
+            'value'  => get_bloginfo('version'),
+            'status' => '',
+        ),
+        array(
+            'label'  => __('Imagick Extension', 'wp-image-compress-to-webp'),
+            'value'  => $imagick_available ? __('Available', 'wp-image-compress-to-webp') : __('Not available', 'wp-image-compress-to-webp'),
+            'status' => $imagick_available ? 'ok' : '',
+        ),
+        array(
+            'label'  => __('GD WebP Support', 'wp-image-compress-to-webp'),
+            'value'  => $gd_webp_available ? __('Available', 'wp-image-compress-to-webp') : __('Not available', 'wp-image-compress-to-webp'),
+            'status' => $gd_webp_available ? 'ok' : '',
+        ),
+        array(
+            'label'  => __('Conversion Library', 'wp-image-compress-to-webp'),
+            'value'  => $conversion_value,
+            'status' => $conversion_status,
+        ),
+    );
+}
+
+/**
  * Add plugin dashboard page in admin menu.
  *
  * @return void
@@ -39,7 +89,7 @@ function wicw_enqueue_admin_assets($hook_suffix)
         'wicw-admin-dashboard',
         plugin_dir_url(__DIR__) . 'assets/admin-dashboard.css',
         array(),
-        '1.0.0'
+        '1.1.0'
     );
 }
 add_action('admin_enqueue_scripts', 'wicw_enqueue_admin_assets');
@@ -83,6 +133,23 @@ function wicw_render_dashboard_page()
                 <p><?php echo esc_html($message); ?></p>
             </div>
         <?php endif; ?>
+
+        <div class="wicw-dashboard__card">
+            <h2 class="wicw-dashboard__section-title"><?php echo esc_html__('Server Configuration', 'wp-image-compress-to-webp'); ?></h2>
+            <dl class="wicw-dashboard__info-table">
+                <?php foreach (wicw_get_server_info() as $row) : ?>
+                    <div class="wicw-dashboard__info-row">
+                        <dt class="wicw-dashboard__info-label"><?php echo esc_html($row['label']); ?></dt>
+                        <dd class="wicw-dashboard__info-value">
+                            <?php if ($row['status'] !== '') : ?>
+                                <span class="wicw-dashboard__info-status wicw-dashboard__info-status--<?php echo esc_attr($row['status']); ?>"></span>
+                            <?php endif; ?>
+                            <?php echo esc_html($row['value']); ?>
+                        </dd>
+                    </div>
+                <?php endforeach; ?>
+            </dl>
+        </div>
 
         <div class="wicw-dashboard__card">
             <h2 class="wicw-dashboard__section-title"><?php echo esc_html__('License', 'wp-image-compress-to-webp'); ?></h2>
