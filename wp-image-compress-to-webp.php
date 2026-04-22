@@ -9,6 +9,9 @@
 if (! defined('ABSPATH')) {
     exit;
 }
+
+add_filter('big_image_size_threshold', '__return_false');
+
 require_once __DIR__ . '/src/image-converter.php';
 require_once __DIR__ . '/src/license.php';
 require_once __DIR__ . '/src/admin.php';
