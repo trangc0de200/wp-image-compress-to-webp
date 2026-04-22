@@ -251,6 +251,113 @@ function wicw_count_convertible_attachments()
 }
 
 /**
+ * Get image attachment IDs that are candidates for thumbnail regeneration.
+ *
+ * @param int $offset Offset in the result set.
+ * @param int $limit  Maximum number of IDs to return. Set to 0 for all.
+ *
+ * @return int[]
+ */
+function wicw_get_regenerable_attachment_ids($offset = 0, $limit = 0)
+{
+    global $wpdb;
+
+    $offset = max(0, (int) $offset);
+    $limit  = max(0, (int) $limit);
+
+    if ($limit > 0) {
+        $sql = $wpdb->prepare(
+            "SELECT ID
+            FROM {$wpdb->posts}
+            WHERE post_type = %s
+                AND post_status <> %s
+                AND post_mime_type LIKE %s
+            ORDER BY ID ASC
+            LIMIT %d OFFSET %d",
+            'attachment',
+            'trash',
+            'image/%',
+            $limit,
+            $offset
+        );
+    } else {
+        $sql = $wpdb->prepare(
+            "SELECT ID
+            FROM {$wpdb->posts}
+            WHERE post_type = %s
+                AND post_status <> %s
+                AND post_mime_type LIKE %s
+            ORDER BY ID ASC",
+            'attachment',
+            'trash',
+            'image/%'
+        );
+    }
+
+    $ids = $wpdb->get_col($sql);
+    if (! is_array($ids)) {
+        return array();
+    }
+
+    return array_map('intval', $ids);
+}
+
+/**
+ * Count image attachments that can be regenerated.
+ *
+ * @return int
+ */
+function wicw_count_regenerable_attachments()
+{
+    global $wpdb;
+
+    $sql = $wpdb->prepare(
+        "SELECT COUNT(ID)
+        FROM {$wpdb->posts}
+        WHERE post_type = %s
+            AND post_status <> %s
+            AND post_mime_type LIKE %s",
+        'attachment',
+        'trash',
+        'image/%'
+    );
+
+    return (int) $wpdb->get_var($sql);
+}
+
+/**
+ * Regenerate thumbnails for one image attachment.
+ *
+ * @param int $attachment_id Attachment post ID.
+ *
+ * @return array{regenerated:bool,failed:bool}
+ */
+function wicw_regenerate_attachment_thumbnails($attachment_id)
+{
+    $attachment_id = (int) $attachment_id;
+    if ($attachment_id <= 0 || ! wp_attachment_is_image($attachment_id)) {
+        return array('regenerated' => false, 'failed' => true);
+    }
+
+    $attached_file = get_attached_file($attachment_id);
+    if (! is_string($attached_file) || $attached_file === '' || ! file_exists($attached_file)) {
+        return array('regenerated' => false, 'failed' => true);
+    }
+
+    $metadata = wp_generate_attachment_metadata($attachment_id, $attached_file);
+    if (! is_array($metadata) || empty($metadata)) {
+        return array('regenerated' => false, 'failed' => true);
+    }
+
+    $updated = wp_update_attachment_metadata($attachment_id, $metadata);
+    if ($updated === false) {
+        return array('regenerated' => false, 'failed' => true);
+    }
+
+    return array('regenerated' => true, 'failed' => false);
+}
+
+/**
  * Convert one existing attachment (original + generated sizes) to WebP.
  *
  * @param int $attachment_id Attachment post ID.
