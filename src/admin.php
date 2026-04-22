@@ -95,6 +95,141 @@ function wicw_enqueue_admin_assets($hook_suffix)
 add_action('admin_enqueue_scripts', 'wicw_enqueue_admin_assets');
 
 /**
+ * Start a bulk conversion session for existing attachments.
+ *
+ * @return void
+ */
+function wicw_handle_conversion_start_submission()
+{
+    if (! current_user_can('manage_options')) {
+        return;
+    }
+
+    if ((string) filter_input(INPUT_SERVER, 'REQUEST_METHOD') !== 'POST') {
+        return;
+    }
+
+    if (! isset($_POST['wicw_start_conversion'])) {
+        return;
+    }
+
+    check_admin_referer('wicw_start_conversion', 'wicw_start_conversion_nonce');
+
+    $attachment_ids = wicw_get_convertible_attachment_ids();
+    $session_id     = wp_generate_uuid4();
+    set_transient('wicw_conversion_queue_' . $session_id, $attachment_ids, HOUR_IN_SECONDS);
+
+    $redirect_url = add_query_arg(
+        array(
+            'page'           => 'wicw-dashboard',
+            'wicw_convert'   => '1',
+            'wicw_session'   => $session_id,
+            'wicw_offset'    => 0,
+            'wicw_total'     => count($attachment_ids),
+            'wicw_converted' => 0,
+            'wicw_failed'    => 0,
+            'wicw_nonce'     => wp_create_nonce('wicw_bulk_convert'),
+        ),
+        admin_url('admin.php')
+    );
+
+    wp_safe_redirect($redirect_url);
+    exit;
+}
+
+/**
+ * Process one conversion batch and return progress details.
+ *
+ * @return array<string,mixed>|null
+ */
+function wicw_get_conversion_progress_state()
+{
+    if (! current_user_can('manage_options')) {
+        return null;
+    }
+
+    if (! isset($_GET['wicw_convert']) || (string) $_GET['wicw_convert'] !== '1') {
+        return null;
+    }
+
+    $nonce = isset($_GET['wicw_nonce']) ? sanitize_text_field(wp_unslash($_GET['wicw_nonce'])) : '';
+    if (! wp_verify_nonce($nonce, 'wicw_bulk_convert')) {
+        return array(
+            'is_error' => true,
+            'message'  => __('Invalid conversion request. Please start conversion again.', 'wp-image-compress-to-webp'),
+        );
+    }
+
+    $session_id = isset($_GET['wicw_session']) ? sanitize_key(wp_unslash($_GET['wicw_session'])) : '';
+    if ($session_id === '') {
+        return array(
+            'is_error' => true,
+            'message'  => __('Conversion session not found. Please start again.', 'wp-image-compress-to-webp'),
+        );
+    }
+
+    $queue = get_transient('wicw_conversion_queue_' . $session_id);
+    if (! is_array($queue)) {
+        return array(
+            'is_error' => true,
+            'message'  => __('Conversion session expired. Please start again.', 'wp-image-compress-to-webp'),
+        );
+    }
+
+    $offset    = isset($_GET['wicw_offset']) ? max(0, absint($_GET['wicw_offset'])) : 0;
+    $total     = isset($_GET['wicw_total']) ? max(0, absint($_GET['wicw_total'])) : count($queue);
+    $converted = isset($_GET['wicw_converted']) ? max(0, absint($_GET['wicw_converted'])) : 0;
+    $failed    = isset($_GET['wicw_failed']) ? max(0, absint($_GET['wicw_failed'])) : 0;
+    $batch_size = 20;
+
+    $batch_ids = array_slice($queue, $offset, $batch_size);
+    foreach ($batch_ids as $attachment_id) {
+        $result = wicw_convert_existing_attachment_to_webp((int) $attachment_id);
+        if (! empty($result['converted'])) {
+            $converted++;
+            continue;
+        }
+
+        $failed++;
+    }
+
+    $processed = min($total, $offset + count($batch_ids));
+    $running   = ($processed < $total);
+    $percent   = ($total > 0) ? (int) floor(($processed / $total) * 100) : 100;
+    $percent   = max(0, min(100, $percent));
+
+    $next_url = '';
+    if ($running) {
+        $next_url = add_query_arg(
+            array(
+                'page'           => 'wicw-dashboard',
+                'wicw_convert'   => '1',
+                'wicw_session'   => $session_id,
+                'wicw_offset'    => $processed,
+                'wicw_total'     => $total,
+                'wicw_converted' => $converted,
+                'wicw_failed'    => $failed,
+                'wicw_nonce'     => $nonce,
+            ),
+            admin_url('admin.php')
+        );
+    } else {
+        delete_transient('wicw_conversion_queue_' . $session_id);
+    }
+
+    return array(
+        'is_error'   => false,
+        'running'    => $running,
+        'processed'  => $processed,
+        'total'      => $total,
+        'converted'  => $converted,
+        'failed'     => $failed,
+        'percent'    => $percent,
+        'next_url'   => $next_url,
+    );
+}
+
+/**
  * Render plugin dashboard page.
  *
  * @return void
@@ -105,6 +240,8 @@ function wicw_render_dashboard_page()
         return;
     }
 
+    wicw_handle_conversion_start_submission();
+    $conversion_state = wicw_get_conversion_progress_state();
     $notice         = wicw_handle_license_form_submission();
     $message        = isset($notice['message']) ? (string) $notice['message'] : '';
     $notice_type    = '';
@@ -122,6 +259,7 @@ function wicw_render_dashboard_page()
         $license_status = 'inactive';
     }
     $is_active      = ($license_status === 'active');
+    $convertible_count = wicw_count_convertible_attachments();
     ?>
     <div class="wrap wicw-dashboard">
         <h1 class="wicw-dashboard__title"><?php echo esc_html__('WP Image Compress To WebP Dashboard', 'wp-image-compress-to-webp'); ?></h1>
@@ -185,6 +323,82 @@ function wicw_render_dashboard_page()
                     </button>
                     <button type="submit" name="wicw_deactivate_license" class="button">
                         <?php echo esc_html__('Deactivate License', 'wp-image-compress-to-webp'); ?>
+                    </button>
+                </p>
+            </form>
+        </div>
+
+        <div class="wicw-dashboard__card">
+            <h2 class="wicw-dashboard__section-title"><?php echo esc_html__('Convert Existing Images', 'wp-image-compress-to-webp'); ?></h2>
+            <p class="wicw-dashboard__meta">
+                <?php
+                echo esc_html(
+                    sprintf(
+                        /* translators: %d: Number of existing JPEG/PNG media items */
+                        __('Found %d existing JPEG/PNG media item(s).', 'wp-image-compress-to-webp'),
+                        (int) $convertible_count
+                    )
+                );
+                ?>
+            </p>
+
+            <?php if (is_array($conversion_state)) : ?>
+                <?php if (! empty($conversion_state['is_error'])) : ?>
+                    <div class="notice notice-error inline wicw-dashboard__notice">
+                        <p><?php echo esc_html((string) $conversion_state['message']); ?></p>
+                    </div>
+                <?php else : ?>
+                    <div class="wicw-dashboard__progress">
+                        <p class="wicw-dashboard__status">
+                            <strong><?php echo esc_html__('Progress:', 'wp-image-compress-to-webp'); ?></strong>
+                            <span>
+                                <?php
+                                echo esc_html(
+                                    sprintf(
+                                        /* translators: 1: processed count, 2: total count */
+                                        __('%1$d / %2$d processed', 'wp-image-compress-to-webp'),
+                                        (int) $conversion_state['processed'],
+                                        (int) $conversion_state['total']
+                                    )
+                                );
+                                ?>
+                            </span>
+                        </p>
+                        <div class="wicw-dashboard__progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr((string) $conversion_state['percent']); ?>">
+                            <span class="wicw-dashboard__progress-value" style="width: <?php echo esc_attr((string) $conversion_state['percent']); ?>%;"></span>
+                        </div>
+                        <p class="wicw-dashboard__meta">
+                            <?php
+                            echo esc_html(
+                                sprintf(
+                                    /* translators: 1: successful count, 2: failed count */
+                                    __('Converted: %1$d · Failed: %2$d', 'wp-image-compress-to-webp'),
+                                    (int) $conversion_state['converted'],
+                                    (int) $conversion_state['failed']
+                                )
+                            );
+                            ?>
+                        </p>
+
+                        <?php if (! empty($conversion_state['running']) && ! empty($conversion_state['next_url'])) : ?>
+                            <p class="wicw-dashboard__meta"><?php echo esc_html__('Continuing conversion...', 'wp-image-compress-to-webp'); ?></p>
+                            <script>
+                                window.setTimeout(function () {
+                                    window.location.href = <?php echo wp_json_encode((string) $conversion_state['next_url']); ?>;
+                                }, 700);
+                            </script>
+                        <?php else : ?>
+                            <p class="wicw-dashboard__meta"><?php echo esc_html__('Conversion finished.', 'wp-image-compress-to-webp'); ?></p>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+
+            <form method="post">
+                <?php wp_nonce_field('wicw_start_conversion', 'wicw_start_conversion_nonce'); ?>
+                <p class="submit wicw-dashboard__actions">
+                    <button type="submit" name="wicw_start_conversion" class="button button-primary">
+                        <?php echo esc_html__('Convert Old Images to WebP', 'wp-image-compress-to-webp'); ?>
                     </button>
                 </p>
             </form>
