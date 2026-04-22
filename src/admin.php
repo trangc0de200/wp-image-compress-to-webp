@@ -7,7 +7,7 @@ if (! defined('ABSPATH')) {
 /**
  * Collect server configuration data relevant to this plugin.
  *
- * @return array<int, array{label: string, value: string, status: string}> Rows with label, value, and status ('ok'|'warn'|'').
+ * @return list<array{label: string, value: string, status: string}> Rows with label, value, and status ('ok'|'warn'|'').
  */
 function wicw_get_server_info()
 {

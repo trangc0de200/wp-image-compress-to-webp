@@ -84,7 +84,7 @@
 
 .wicw-dashboard__info-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
     background: #fff;
     padding: 9px 14px;
