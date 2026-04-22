@@ -168,11 +168,13 @@ function wicw_get_conversion_progress_state()
         return null;
     }
 
-    if (! isset($_GET['wicw_convert']) || (string) $_GET['wicw_convert'] !== '1') {
+    $convert_flag = filter_input(INPUT_GET, 'wicw_convert', FILTER_UNSAFE_RAW);
+    if ((string) $convert_flag !== '1') {
         return null;
     }
 
-    $nonce = isset($_GET['wicw_nonce']) ? (string) wp_unslash($_GET['wicw_nonce']) : '';
+    $nonce = filter_input(INPUT_GET, 'wicw_nonce', FILTER_UNSAFE_RAW);
+    $nonce = is_string($nonce) ? sanitize_text_field($nonce) : '';
     if (! wp_verify_nonce($nonce, 'wicw_bulk_convert')) {
         return array(
             'is_error' => true,
@@ -180,7 +182,8 @@ function wicw_get_conversion_progress_state()
         );
     }
 
-    $session_id = isset($_GET['wicw_session']) ? sanitize_key(wp_unslash($_GET['wicw_session'])) : '';
+    $session_id = filter_input(INPUT_GET, 'wicw_session', FILTER_UNSAFE_RAW);
+    $session_id = is_string($session_id) ? sanitize_key($session_id) : '';
     if ($session_id === '') {
         return array(
             'is_error' => true,
@@ -196,10 +199,14 @@ function wicw_get_conversion_progress_state()
         );
     }
 
-    $offset    = isset($_GET['wicw_offset']) ? max(0, absint($_GET['wicw_offset'])) : 0;
-    $total     = isset($_GET['wicw_total']) ? max(0, absint($_GET['wicw_total'])) : count($queue);
-    $converted = isset($_GET['wicw_converted']) ? max(0, absint($_GET['wicw_converted'])) : 0;
-    $failed    = isset($_GET['wicw_failed']) ? max(0, absint($_GET['wicw_failed'])) : 0;
+    $offset_raw    = filter_input(INPUT_GET, 'wicw_offset', FILTER_VALIDATE_INT);
+    $total_raw     = filter_input(INPUT_GET, 'wicw_total', FILTER_VALIDATE_INT);
+    $converted_raw = filter_input(INPUT_GET, 'wicw_converted', FILTER_VALIDATE_INT);
+    $failed_raw    = filter_input(INPUT_GET, 'wicw_failed', FILTER_VALIDATE_INT);
+    $offset        = max(0, (int) $offset_raw);
+    $total         = ($total_raw !== null && $total_raw !== false) ? max(0, (int) $total_raw) : count($queue);
+    $converted     = max(0, (int) $converted_raw);
+    $failed        = max(0, (int) $failed_raw);
     $batch_size = wicw_conversion_batch_size();
 
     $batch_ids = array_slice($queue, $offset, $batch_size);
@@ -247,6 +254,145 @@ function wicw_get_conversion_progress_state()
 }
 
 /**
+ * Start a bulk thumbnail regeneration session.
+ *
+ * @return void
+ */
+function wicw_handle_regeneration_start_submission()
+{
+    if (! current_user_can('manage_options')) {
+        return;
+    }
+
+    if ((string) filter_input(INPUT_SERVER, 'REQUEST_METHOD') !== 'POST') {
+        return;
+    }
+
+    if (! isset($_POST['wicw_start_regeneration'])) {
+        return;
+    }
+
+    check_admin_referer('wicw_start_regeneration', 'wicw_start_regeneration_nonce');
+
+    $attachment_ids = wicw_get_regenerable_attachment_ids();
+    $session_id     = wp_generate_uuid4();
+    set_transient('wicw_regeneration_queue_' . $session_id, $attachment_ids, HOUR_IN_SECONDS);
+
+    $redirect_url = add_query_arg(
+        array(
+            'page'               => 'wicw-dashboard',
+            'wicw_regenerate'    => '1',
+            'wicw_session'       => $session_id,
+            'wicw_offset'        => 0,
+            'wicw_total'         => count($attachment_ids),
+            'wicw_regenerated'   => 0,
+            'wicw_failed'        => 0,
+            'wicw_nonce'         => wp_create_nonce('wicw_bulk_regenerate'),
+        ),
+        admin_url('admin.php')
+    );
+
+    wp_safe_redirect($redirect_url);
+    exit;
+}
+
+/**
+ * Process one thumbnail regeneration batch and return progress details.
+ *
+ * @return array<string,mixed>|null
+ */
+function wicw_get_regeneration_progress_state()
+{
+    if (! current_user_can('manage_options')) {
+        return null;
+    }
+
+    $regenerate_flag = filter_input(INPUT_GET, 'wicw_regenerate', FILTER_UNSAFE_RAW);
+    if ((string) $regenerate_flag !== '1') {
+        return null;
+    }
+
+    $nonce = filter_input(INPUT_GET, 'wicw_nonce', FILTER_UNSAFE_RAW);
+    $nonce = is_string($nonce) ? sanitize_text_field($nonce) : '';
+    if (! wp_verify_nonce($nonce, 'wicw_bulk_regenerate')) {
+        return array(
+            'is_error' => true,
+            'message'  => __('Invalid regeneration request. Please start again.', 'wp-image-compress-to-webp'),
+        );
+    }
+
+    $session_id = filter_input(INPUT_GET, 'wicw_session', FILTER_UNSAFE_RAW);
+    $session_id = is_string($session_id) ? sanitize_key($session_id) : '';
+    if ($session_id === '') {
+        return array(
+            'is_error' => true,
+            'message'  => __('Regeneration session not found. Please start again.', 'wp-image-compress-to-webp'),
+        );
+    }
+
+    $queue = get_transient('wicw_regeneration_queue_' . $session_id);
+    if (! is_array($queue)) {
+        return array(
+            'is_error' => true,
+            'message'  => __('Regeneration session expired. Please start again.', 'wp-image-compress-to-webp'),
+        );
+    }
+
+    $offset_raw      = filter_input(INPUT_GET, 'wicw_offset', FILTER_VALIDATE_INT);
+    $total_raw       = filter_input(INPUT_GET, 'wicw_total', FILTER_VALIDATE_INT);
+    $regenerated_raw = filter_input(INPUT_GET, 'wicw_regenerated', FILTER_VALIDATE_INT);
+    $failed_raw      = filter_input(INPUT_GET, 'wicw_failed', FILTER_VALIDATE_INT);
+    $offset          = max(0, (int) $offset_raw);
+    $total           = ($total_raw !== null && $total_raw !== false) ? max(0, (int) $total_raw) : count($queue);
+    $regenerated     = max(0, (int) $regenerated_raw);
+    $failed          = max(0, (int) $failed_raw);
+    $batch_size = wicw_conversion_batch_size();
+
+    $batch_ids = array_slice($queue, $offset, $batch_size);
+    foreach ($batch_ids as $attachment_id) {
+        $result = wicw_regenerate_attachment_thumbnails((int) $attachment_id);
+        if (! empty($result['regenerated'])) {
+            $regenerated++;
+            continue;
+        }
+
+        $failed++;
+    }
+
+    $processed = min($total, $offset + count($batch_ids));
+    $running   = ($processed < $total);
+    $percent   = ($total > 0) ? (int) floor(($processed / $total) * 100) : 100;
+    $percent   = max(0, min(100, $percent));
+
+    $next_args = array();
+    if ($running) {
+        $next_args = array(
+            'page'             => 'wicw-dashboard',
+            'wicw_regenerate'  => '1',
+            'wicw_session'     => $session_id,
+            'wicw_offset'      => $processed,
+            'wicw_total'       => $total,
+            'wicw_regenerated' => $regenerated,
+            'wicw_failed'      => $failed,
+            'wicw_nonce'       => $nonce,
+        );
+    } else {
+        delete_transient('wicw_regeneration_queue_' . $session_id);
+    }
+
+    return array(
+        'is_error'     => false,
+        'running'      => $running,
+        'processed'    => $processed,
+        'total'        => $total,
+        'regenerated'  => $regenerated,
+        'failed'       => $failed,
+        'percent'      => $percent,
+        'next_args'    => $next_args,
+    );
+}
+
+/**
  * Render plugin dashboard page.
  *
  * @return void
@@ -258,7 +404,9 @@ function wicw_render_dashboard_page()
     }
 
     wicw_handle_conversion_start_submission();
-    $conversion_state = wicw_get_conversion_progress_state();
+    wicw_handle_regeneration_start_submission();
+    $conversion_state   = wicw_get_conversion_progress_state();
+    $regeneration_state = wicw_get_regeneration_progress_state();
     $notice         = wicw_handle_license_form_submission();
     $message        = isset($notice['message']) ? (string) $notice['message'] : '';
     $notice_type    = '';
@@ -277,6 +425,7 @@ function wicw_render_dashboard_page()
     }
     $is_active      = ($license_status === 'active');
     $convertible_count = wicw_count_convertible_attachments();
+    $regenerable_count = wicw_count_regenerable_attachments();
     ?>
     <div class="wrap wicw-dashboard">
         <h1 class="wicw-dashboard__title"><?php echo esc_html__('WP Image Compress To WebP Dashboard', 'wp-image-compress-to-webp'); ?></h1>
@@ -413,6 +562,79 @@ function wicw_render_dashboard_page()
                 <p class="submit wicw-dashboard__actions">
                     <button type="submit" name="wicw_start_conversion" class="button button-primary">
                         <?php echo esc_html__('Convert Old Images to WebP', 'wp-image-compress-to-webp'); ?>
+                    </button>
+                </p>
+            </form>
+        </div>
+
+        <div class="wicw-dashboard__card">
+            <h2 class="wicw-dashboard__section-title"><?php echo esc_html__('Regenerate All Thumbnails', 'wp-image-compress-to-webp'); ?></h2>
+            <p class="wicw-dashboard__meta">
+                <?php
+                echo esc_html(
+                    sprintf(
+                        /* translators: %d: Number of image attachments */
+                        __('Found %d image attachment(s).', 'wp-image-compress-to-webp'),
+                        (int) $regenerable_count
+                    )
+                );
+                ?>
+            </p>
+
+            <?php if (is_array($regeneration_state)) : ?>
+                <?php if (! empty($regeneration_state['is_error'])) : ?>
+                    <div class="notice notice-error inline wicw-dashboard__notice">
+                        <p><?php echo esc_html((string) $regeneration_state['message']); ?></p>
+                    </div>
+                <?php else : ?>
+                    <div class="wicw-dashboard__progress">
+                        <p class="wicw-dashboard__status">
+                            <strong><?php echo esc_html__('Progress:', 'wp-image-compress-to-webp'); ?></strong>
+                            <span>
+                                <?php
+                                echo esc_html(
+                                    sprintf(
+                                        /* translators: 1: processed count, 2: total count */
+                                        __('%1$d / %2$d processed', 'wp-image-compress-to-webp'),
+                                        (int) $regeneration_state['processed'],
+                                        (int) $regeneration_state['total']
+                                    )
+                                );
+                                ?>
+                            </span>
+                        </p>
+                        <div class="wicw-dashboard__progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="<?php echo esc_attr((string) $regeneration_state['percent']); ?>">
+                            <span class="wicw-dashboard__progress-value" style="width: <?php echo esc_attr((string) $regeneration_state['percent']); ?>%;"></span>
+                        </div>
+                        <p class="wicw-dashboard__meta">
+                            <?php
+                            echo esc_html(
+                                sprintf(
+                                    /* translators: 1: successful count, 2: failed count */
+                                    __('Regenerated: %1$d · Failed: %2$d', 'wp-image-compress-to-webp'),
+                                    (int) $regeneration_state['regenerated'],
+                                    (int) $regeneration_state['failed']
+                                )
+                            );
+                            ?>
+                        </p>
+
+                        <?php if (! empty($regeneration_state['running']) && ! empty($regeneration_state['next_args']) && is_array($regeneration_state['next_args'])) : ?>
+                            <?php $next_url = add_query_arg($regeneration_state['next_args'], admin_url('admin.php')); ?>
+                            <p class="wicw-dashboard__meta"><?php echo esc_html__('Continuing regeneration...', 'wp-image-compress-to-webp'); ?></p>
+                            <meta http-equiv="refresh" content="<?php echo esc_attr((string) max(1, (int) ceil(wicw_conversion_redirect_delay_ms() / 1000))); ?>;url=<?php echo esc_url($next_url); ?>">
+                        <?php else : ?>
+                            <p class="wicw-dashboard__meta"><?php echo esc_html__('Regeneration finished.', 'wp-image-compress-to-webp'); ?></p>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+
+            <form method="post">
+                <?php wp_nonce_field('wicw_start_regeneration', 'wicw_start_regeneration_nonce'); ?>
+                <p class="submit wicw-dashboard__actions">
+                    <button type="submit" name="wicw_start_regeneration" class="button button-primary">
+                        <?php echo esc_html__('Regenerate All Thumbnails', 'wp-image-compress-to-webp'); ?>
                     </button>
                 </p>
             </form>
